@@ -1,0 +1,74 @@
+Goal: Remove all PCR reads that are exact copies of another read, retaining only one copy. Every read should be unique.
+      Exact copies have the same alignment position and the same UMI.
+      Position is defined by chromosome, leftmost position, and strand forward vs. reverse.
+      Leftmost position will need to be adjusted for soft clipping and for all reverse strands.
+Input: A sorted sam file. It is assumed the file will be sorted by default samtools settings to put reads in order of 
+        chromosome and position.
+Output: A sam file with all duplicates removed.
+
+Problems to be warry of: memory usage from large files, soft clipping
+
+Important variables:  Current Chromosome:currchrom: Found in RNAME field of sam line. 
+                                            Checked at line read. If RNAME does not match currchrom, currchrom is reassigned and the duplicate tracker list is wiped.
+                      Current Position:currpos: Found in POS field of sam line. 
+                                          Checked at line read. If POS does not match currpos, currpos is reassigned and the duplicate tracker list is wiped.
+                      Duplicate Dictionary:duplidict: 192 fields long, covering all 96 UMIs for both forward and reverse stands.
+                                              Keys will be the UMI followed by a 1 for forward strand or a 2 for reverse strand (AACGCCAT2).
+                                              The value will be a true or false for if that read has been seen.
+
+Strategy: First read in original sam file line by line and adjust position for soft clipping. Retain original position as a new XP field at end of the line.
+            This is also a good time to quality filter if desired. May include check for single end data. Write to new file.
+            Use samtools to reorder new file based chromosome and position.
+            Read in sorted file line by line. 
+            Check current position and chromosome. If either has changed from the last line, wipe dictionary. (variables will be initialized to arbitrary values that will be overwritten when first line fails this check.)
+            Generate line key with UMI and forward/reverse. Discard lines with unknown UMIs.
+            Use key to check dictionary. If true, discard line. If false, change to true and write line to final output file.
+            Delete middle file, only retain final file.
+
+Functions:
+
+  IsReverse:
+    Checks to see if string is forward or reverse oriented.
+    Input:FLAG
+    Output: boolean
+    	if ((flag & 16) == 16):
+		    return true (read is reverse)
+      else return false (read is forward)
+
+  SoftClipping:
+    Returns the corrected position for a read, taking into account soft clipping and reverse orientation.
+    Input: CIGAR string, POS, output from IsReverse
+    Output: new POS (int)
+      parse cigar for letters: (likely will use split function for this)
+        length = sum of cigar numbers M,I,=, and X (S excluded due to already being accounted for)
+        If S in cigar:
+          S = number in front of S (soft clipping length)
+          if reverse:
+            pos = pos + S
+          else:
+            pos = pos - S
+      If reverse:
+        pos = pos + length
+      return pos
+
+      Test Example:
+        Input: 25S46M, 500, false
+        Output: 475
+        Input: 46M25S, 500, true
+        Output: 596
+
+  UMIkey:
+    outputs keycode dictionary based on UMI and forward/reverse strandedness.
+    Input: QNAME, output from IsReverse
+    Output: string
+      qname = QNAME.split(':') 
+      umi=qname.pop()
+      if reverse:
+        umi = umi+"2"
+      else:
+        umi = umi+"1"
+      return umi
+
+      Test Example:
+        Input: NS500451:154:HWKTMBGXX:1:11101:10568:1142:GAGAAGTC, false
+        Output: GAGAAGTC1
