@@ -40,12 +40,13 @@ Functions:
     Input: CIGAR string, POS, output from IsReverse
     Output: new POS (int)
       parse cigar for letters: (likely will use split function for this)
-        length = sum of cigar numbers M,I,=, and X (S excluded due to already being accounted for)
+        length = sum of cigar numbers M,I,=,X and S
         If S in cigar:
-          S = number in front of S (soft clipping length)
-          if reverse:
+          if reverse and S is the last cigar section:
+	    S = number in front of ending S (soft clipping length)
             pos = pos + S
-          else:
+          elif not reversed and S is the last cigar section:
+	    S = number in front of starting S (soft clipping length)
             pos = pos - S
       If reverse:
         pos = pos + length
@@ -72,3 +73,19 @@ Functions:
       Test Example:
         Input: NS500451:154:HWKTMBGXX:1:11101:10568:1142:GAGAAGTC, false
         Output: GAGAAGTC1
+
+Testing files:
+	All files are based on the first 164 lines of /projects/bgmp/ftedder/bioinfo/Bi623/PS/QAA/Aligned.out.sam
+	deduper.test.sorted.sam
+		The sorted sam file for input, 100 reads long with all headers. 
+		Mix of reasons for not being duplicates as well as placement of duplicates (start of chromosome, entire position, etc.)
+		Includes various cigars that cause duplication. 
+	deduper.test.output.sam
+		Expected output file.
+		It is possible more lines are removed than seen here as the original file had some natural duplicates and I may have missed some while creating the output.
+	deduper.test.list.txt
+		List of 100 letters. n for not a duplicate, N for the first of a duplicate, y for a duplicate that needs to be removed, and e for unknown UMIs.
+		It is possible this is missing some duplicates, see above, and there may be some off by 1 errors in the lines.
+		Possible future improvement if needed: adding what makes the line a duplicate or not a duplicate in case patterns emerge while debugging.
+
+		I believe all errors in testing files will be quickly ironed out once they start being used.
