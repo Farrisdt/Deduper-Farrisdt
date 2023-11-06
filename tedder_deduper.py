@@ -6,7 +6,7 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser(description="Takes in a sorted Sam file and returns a Sam file with all repeat reads removed. The first encounter of each read is sent to the deduped output file. Subsequent reads are sent to the duplicates file. Unrecognized UMIs are sent to an error file. Also reports number of unique reads per chromosome in a report file.")
     parser.add_argument("-f", "--file", help="Path to sorted Sam file", type=str, required=True)
-    parser.add_argument("-o", "--outfile", help="Name of output file", type=str, required=True) #not needed here
+    parser.add_argument("-o", "--outfile", help="Name of output file", type=str, required=True)
     parser.add_argument("-u", "--umi", help="Path to file holding list of UMIs", type=str, required=True)
     return parser.parse_args()
 args = get_args()
@@ -14,10 +14,13 @@ args = get_args()
 #Variables
 infile = args.file
 outfile = args.outfile
+dupfile = f"{outfile[:-4]}_duplicates.txt" #Name for duplicates file
 errorfile = f"{outfile[:-4]}_error.txt" #Name for file holding rejected reads
-tempfile = "./dedupertempfile.sam"
+reportfile = f"{outfile[:-4]}_report.txt" #Name for file holding rejected reads
 umifile = args.umi
+dict = {} #used to hold reads we have seen, per chromosome
 umidict = {} #holds uniqe umis
+currchrom = "0" #current chromosome, char due to X and Y
 first = True #used to avoid error on reading in first chromosome
 
 #functions
@@ -75,16 +78,26 @@ with open(umifile, "r") as file:
     for umi in file:
         umi = umi.strip()
         umidict[umi] = 0
-
-with open(infile, "r") as file, open(tempfile, "w") as out, open(errorfile, "w") as error:
+x=1 #used to track number of reads for report.
+with open(infile, "r") as file, open(outfile, "w") as out, open(dupfile, "w") as dup, open(errorfile, "w") as error, open(reportfile, "w") as report:
     for lines in file:
         if lines[0]=="@":
             #write out headers
             out.write(lines)
         else:
-            lines=lines.strip()
             line = lines.split("\t")
             qname = line[0].split(":")
+            if not currchrom == line[2]:
+                #clears dict for each new chromosome to save space
+                dict.clear()
+                if not currchrom=="0":
+                    r = currchrom+":"+str(x)+"\n"
+                    report.write(r)
+                currchrom = line[2]
+                if first: #if the first line, the currchrom is set to default.
+                    first=False #will break for loop in the future, avoid dropping chrom 1.
+                else:
+                    x=0
             flag = line[1]
             pos = line[3]
             cigar = line[5]
@@ -98,10 +111,12 @@ with open(infile, "r") as file, open(tempfile, "w") as out, open(errorfile, "w")
             else:
                 strand = "+"
             truepos = truePosition(cigar, pos, flag)
-            qname[3] = truepos
-            newqname = ":".join([str(z) for z in qname])
-            line[0] = newqname
-            oldpos = f"{pos}\n"
-            line.append(oldpos)
-            newline = "\t".join([str(z) for z in line])
-            out.write(newline)
+            key = umi + str(truepos) + strand
+            if key in dict.keys():
+                dup.write(lines)
+            else:
+                out.write(lines)
+                dict[key] = 0
+                x=x+1
+    r = currchrom+":"+str(x)+"\n"
+    report.write(r)
